@@ -8,14 +8,22 @@ final class AppModel: ObservableObject {
     private static let settingsKey = "asiair.sync.settings"
     private static let didAskStartAtLoginKey = "asiair.sync.didAskStartAtLogin"
     private static let settingsExpandedKey = "asiair.sync.settingsExpanded"
+    private static let lastAutoUpdateCheckKey = "asiair.sync.lastAutoUpdateCheck"
+    private static let autoUpdateCheckInterval: TimeInterval = 6 * 60 * 60
 
     @Published var settings: SyncSettings
     @Published var runtimeStatus: SyncRuntimeStatus
     @Published var showStartAtLoginPrompt = false
     @Published var startAtLoginFeedback: String?
+    @Published var showUpdateAvailablePrompt = false
+    @Published var isCheckingForUpdates = false
+    @Published var updateStatusMessage = "Checking for updates..."
+    @Published var availableUpdateVersion: String?
 
     private let defaults = UserDefaults.standard
     private let syncEngine: SyncEngine
+    private let updateChecker = UpdateChecker()
+    private var updateInfo: UpdateInfo?
     private var cancellables = Set<AnyCancellable>()
 
     init() {
@@ -45,6 +53,10 @@ final class AppModel: ObservableObject {
             engine.setPaused(false)
         } else {
             engine.setPaused(true)
+        }
+
+        Task { [weak self] in
+            await self?.autoCheckForUpdatesIfNeeded()
         }
     }
 
@@ -143,6 +155,63 @@ final class AppModel: ObservableObject {
             }
         } else {
             startAtLoginFeedback = "Start at login left disabled"
+        }
+    }
+
+    func checkForUpdates(userInitiated: Bool) {
+        Task { [weak self] in
+            await self?.runUpdateCheck(userInitiated: userInitiated)
+        }
+    }
+
+    func openUpdateDownload() {
+        guard let update = updateInfo else {
+            return
+        }
+        NSWorkspace.shared.open(update.downloadURL)
+    }
+
+    private func autoCheckForUpdatesIfNeeded() async {
+        let now = Date()
+        if let lastCheck = defaults.object(forKey: Self.lastAutoUpdateCheckKey) as? Date,
+           now.timeIntervalSince(lastCheck) < Self.autoUpdateCheckInterval {
+            return
+        }
+
+        defaults.set(now, forKey: Self.lastAutoUpdateCheckKey)
+        await runUpdateCheck(userInitiated: false)
+    }
+
+    private func runUpdateCheck(userInitiated: Bool) async {
+        if isCheckingForUpdates {
+            return
+        }
+
+        isCheckingForUpdates = true
+        if userInitiated {
+            updateStatusMessage = "Checking for updates..."
+        }
+
+        let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
+        let result = await updateChecker.checkForUpdate(currentVersion: currentVersion)
+        isCheckingForUpdates = false
+
+        switch result {
+        case .updateAvailable(let info):
+            updateInfo = info
+            availableUpdateVersion = info.version
+            updateStatusMessage = "Update available: v\(info.version)"
+            if !userInitiated {
+                showUpdateAvailablePrompt = true
+            }
+        case .upToDate(let latest):
+            updateInfo = nil
+            availableUpdateVersion = nil
+            updateStatusMessage = "You're up to date (v\(latest))"
+        case .failed(let message):
+            if userInitiated {
+                updateStatusMessage = "Could not check updates: \(message)"
+            }
         }
     }
 

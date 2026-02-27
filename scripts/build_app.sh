@@ -22,6 +22,7 @@ swiftc \
   "${ROOT_DIR}/App/MenuBarContentView.swift" \
   "${ROOT_DIR}/App/Models.swift" \
   "${ROOT_DIR}/App/StartAtLoginManager.swift" \
+  "${ROOT_DIR}/App/UpdateChecker.swift" \
   "${ROOT_DIR}/App/SyncEngine.swift" \
   -framework SwiftUI \
   -framework AppKit \

@@ -46,6 +46,7 @@ struct SyncRuntimeStatus {
     var transferSpeed: String?
     var filesLeftToDownload: Int = 0
     var localFitsCount: Int = 0
+    var remoteFitsCount: Int = 0
     var lastSyncedAt: Date?
     var currentFile: String?
 

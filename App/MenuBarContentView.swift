@@ -26,6 +26,9 @@ struct MenuBarContentView: View {
             }
 
             Divider()
+            updatesBlock
+
+            Divider()
 
             Button("Quit ASIAIR Sync") {
                 NSApplication.shared.terminate(nil)
@@ -49,6 +52,18 @@ struct MenuBarContentView: View {
             }
         } message: {
             Text("Run ASIAIR Sync automatically when you log into macOS?")
+        }
+        .alert("Update Available", isPresented: $model.showUpdateAvailablePrompt) {
+            Button("Download") {
+                model.openUpdateDownload()
+            }
+            Button("Later", role: .cancel) { }
+        } message: {
+            if let version = model.availableUpdateVersion {
+                Text("Version v\(version) is available. Download page will open in your browser.")
+            } else {
+                Text("A new version is available.")
+            }
         }
     }
 
@@ -203,6 +218,40 @@ struct MenuBarContentView: View {
                     model.applySettingsAndStart()
                 }
                 .disabled(!model.canApplySettings)
+            }
+        }
+    }
+
+    private var updatesBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Updates")
+                    .font(.subheadline)
+                    .bold()
+
+                Spacer()
+
+                if model.isCheckingForUpdates {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+
+            Text(model.updateStatusMessage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                Button("Check for Updates") {
+                    model.checkForUpdates(userInitiated: true)
+                }
+
+                if model.availableUpdateVersion != nil {
+                    Button("Download Update") {
+                        model.openUpdateDownload()
+                    }
+                }
             }
         }
     }

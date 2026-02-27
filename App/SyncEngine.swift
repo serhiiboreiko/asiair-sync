@@ -22,7 +22,6 @@ final class SyncEngine {
     private var loopRunning = false
     private var currentProcess: Process?
 
-    private let percentRegex = try! NSRegularExpression(pattern: #"([0-9]{1,3}(?:\.[0-9]+)?)%"#)
     private let speedRegex = try! NSRegularExpression(
         pattern: #"([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)?\s*(?:[kmgtpe]?i?b/s|bytes/sec))"#,
         options: [.caseInsensitive]
@@ -69,6 +68,7 @@ final class SyncEngine {
                 $0.transferSpeed = nil
                 $0.filesLeftToDownload = 0
                 $0.localFitsCount = 0
+                $0.remoteFitsCount = 0
                 $0.currentFile = nil
             }
             return
@@ -162,6 +162,7 @@ final class SyncEngine {
                     $0.transferSpeed = nil
                     $0.filesLeftToDownload = 0
                     $0.localFitsCount = 0
+                    $0.remoteFitsCount = 0
                     $0.currentFile = nil
                 }
                 sleepInterruptible(seconds: 1)
@@ -226,8 +227,10 @@ final class SyncEngine {
             return
         }
 
+        let remoteCountBeforeSync = countFitsFiles(in: sourceMountPath)
         let localCountBeforeSync = countFitsFiles(in: settings.destinationPath)
         let filesLeftToDownload = countFilesLeftToDownload(using: settings, sourceMountPath: sourceMountPath)
+        let totalProgressBefore = totalProgress(localFitsCount: localCountBeforeSync, remoteFitsCount: remoteCountBeforeSync)
         if shouldAbortCurrentCycle() {
             log("Aborting cycle after preflight count due to pause/stop")
             return
@@ -237,7 +240,9 @@ final class SyncEngine {
             $0.phase = .syncing
             $0.message = "Syncing FITS files..."
             $0.localFitsCount = localCountBeforeSync
+            $0.remoteFitsCount = remoteCountBeforeSync
             $0.filesLeftToDownload = filesLeftToDownload
+            $0.progressPercent = totalProgressBefore
         }
 
         let rc = runRsync(using: settings, sourceMountPath: sourceMountPath)
@@ -252,17 +257,19 @@ final class SyncEngine {
         switch rc {
         case 0, 23, 24, 35:
             let localCount = countFitsFiles(in: settings.destinationPath)
+            let remoteCount = countFitsFiles(in: sourceMountPath)
             updateRuntimeStatus {
                 $0.phase = .idle
                 $0.message = "Sync cycle done (rc=\(rc))"
-                $0.progressPercent = 100
+                $0.progressPercent = totalProgress(localFitsCount: localCount, remoteFitsCount: remoteCount)
                 $0.transferSpeed = nil
                 $0.filesLeftToDownload = 0
                 $0.localFitsCount = localCount
+                $0.remoteFitsCount = remoteCount
                 $0.lastSyncedAt = Date()
                 $0.currentFile = nil
             }
-            log("Sync cycle finished successfully with rc=\(rc), local FITS files=\(localCount)")
+            log("Sync cycle finished successfully with rc=\(rc), local FITS files=\(localCount), remote FITS files=\(remoteCount)")
         case 30:
             _ = forceUnmount()
             setError("Timeout (rc=30), unmounted SMB share and will retry")
@@ -465,17 +472,12 @@ final class SyncEngine {
             updateRuntimeStatus {
                 if isFitsFilePath(file), $0.filesLeftToDownload > 0 {
                     $0.filesLeftToDownload -= 1
+                    let estimatedLocalFits = max($0.remoteFitsCount - $0.filesLeftToDownload, 0)
+                    $0.progressPercent = totalProgress(localFitsCount: estimatedLocalFits, remoteFitsCount: $0.remoteFitsCount)
                 }
                 $0.currentFile = file
             }
             return
-        }
-
-        if let percent = firstDoubleMatch(in: sanitizedLine, regex: percentRegex) {
-            let bounded = min(max(percent, 0), 100)
-            updateRuntimeStatus {
-                $0.progressPercent = bounded
-            }
         }
 
         if let speed = firstStringMatch(in: sanitizedLine, regex: speedRegex) {
@@ -490,6 +492,8 @@ final class SyncEngine {
             updateRuntimeStatus {
                 if $0.filesLeftToDownload == 0 || bounded < $0.filesLeftToDownload {
                     $0.filesLeftToDownload = bounded
+                    let estimatedLocalFits = max($0.remoteFitsCount - $0.filesLeftToDownload, 0)
+                    $0.progressPercent = totalProgress(localFitsCount: estimatedLocalFits, remoteFitsCount: $0.remoteFitsCount)
                 }
             }
         }
@@ -621,17 +625,6 @@ final class SyncEngine {
         return Int(value)
     }
 
-    private func firstDoubleMatch(in text: String, regex: NSRegularExpression) -> Double? {
-        let range = NSRange(text.startIndex..<text.endIndex, in: text)
-        guard let match = regex.firstMatch(in: text, options: [], range: range),
-              match.numberOfRanges > 1,
-              let valueRange = Range(match.range(at: 1), in: text) else {
-            return nil
-        }
-
-        return Double(text[valueRange])
-    }
-
     private func firstStringMatch(in text: String, regex: NSRegularExpression) -> String? {
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
         guard let match = regex.firstMatch(in: text, options: [], range: range),
@@ -641,6 +634,15 @@ final class SyncEngine {
         }
 
         return String(text[valueRange])
+    }
+
+    private func totalProgress(localFitsCount: Int, remoteFitsCount: Int) -> Double {
+        guard remoteFitsCount > 0 else {
+            return 100
+        }
+
+        let boundedLocal = max(min(localFitsCount, remoteFitsCount), 0)
+        return (Double(boundedLocal) / Double(remoteFitsCount)) * 100
     }
 
     private func setError(_ message: String) {

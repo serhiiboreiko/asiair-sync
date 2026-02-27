@@ -59,10 +59,16 @@ On first launch, the app asks whether to start at login.
 Status fields:
 
 - `Speed`: Current transfer speed
-- `Progress`: Current cycle progress
+- `Progress`: Total progress based on local FITS count vs ASIAIR FITS count
 - `Files left`: Estimated remaining files in this cycle
 - `Local FITS files`: How many FITS files are in your selected folder
 - `Current`: File being synced right now
+
+## Updates
+
+- The app automatically checks GitHub Releases for new versions.
+- You can also click **Check for Updates** inside the app.
+- If an update is available, click **Download Update** and install the latest DMG.
 
 ## Tips For Better Results
 
@@ -91,7 +97,6 @@ Status fields:
 ## Known Limits
 
 - Guest SMB auth only (no username/password UI yet).
-- No auto-update yet.
 - App is not notarized yet, so first launch may need manual approval.
 
 ## Privacy
