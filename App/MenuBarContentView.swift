@@ -1,6 +1,17 @@
 import AppKit
 import SwiftUI
 
+private struct NativeWindowBackgroundModifier: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            content.containerBackground(.regularMaterial, for: .window)
+        } else {
+            content.background(Color(nsColor: .windowBackgroundColor))
+        }
+    }
+}
+
 struct MenuBarContentView: View {
     @ObservedObject var model: AppModel
     @State private var didAppear = false
@@ -37,7 +48,7 @@ struct MenuBarContentView: View {
         }
         .padding(14)
         .frame(width: 380, alignment: .topLeading)
-        .frame(maxHeight: .infinity, alignment: .top)
+        .modifier(NativeWindowBackgroundModifier())
         .onAppear {
             if didAppear { return }
             didAppear = true

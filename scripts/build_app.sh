@@ -11,23 +11,65 @@ RESOURCES_DIR="${CONTENTS_DIR}/Resources"
 
 VERSION="${VERSION:-0.1.0}"
 BUNDLE_ID="${BUNDLE_ID:-com.serhiiboreiko.asiairsync}"
+MIN_MACOS_VERSION="${MIN_MACOS_VERSION:-13.0}"
+ARCHS="${ARCHS:-universal}"
+SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+TMP_DIR="${BUILD_DIR}/tmp"
+MODULE_CACHE_DIR="${BUILD_DIR}/module-cache"
 
-mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}"
+SOURCES=(
+  "${ROOT_DIR}/App/ASIAIRSyncApp.swift"
+  "${ROOT_DIR}/App/AppModel.swift"
+  "${ROOT_DIR}/App/MenuBarContentView.swift"
+  "${ROOT_DIR}/App/Models.swift"
+  "${ROOT_DIR}/App/StartAtLoginManager.swift"
+  "${ROOT_DIR}/App/UpdateChecker.swift"
+  "${ROOT_DIR}/App/SyncEngine.swift"
+)
 
-swiftc \
-  -O \
-  -parse-as-library \
-  "${ROOT_DIR}/App/ASIAIRSyncApp.swift" \
-  "${ROOT_DIR}/App/AppModel.swift" \
-  "${ROOT_DIR}/App/MenuBarContentView.swift" \
-  "${ROOT_DIR}/App/Models.swift" \
-  "${ROOT_DIR}/App/StartAtLoginManager.swift" \
-  "${ROOT_DIR}/App/UpdateChecker.swift" \
-  "${ROOT_DIR}/App/SyncEngine.swift" \
-  -framework SwiftUI \
-  -framework AppKit \
-  -framework ServiceManagement \
-  -o "${MACOS_DIR}/${APP_NAME}"
+COMMON_SWIFTC_ARGS=(
+  -O
+  -parse-as-library
+  -sdk "${SDKROOT}"
+  -module-cache-path "${MODULE_CACHE_DIR}"
+  "${SOURCES[@]}"
+  -framework SwiftUI
+  -framework AppKit
+  -framework ServiceManagement
+)
+
+compile_arch() {
+  local arch="$1"
+  local output="$2"
+  swiftc \
+    "${COMMON_SWIFTC_ARGS[@]}" \
+    -target "${arch}-apple-macos${MIN_MACOS_VERSION}" \
+    -o "${output}"
+}
+
+rm -rf "${APP_DIR}"
+mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}" "${TMP_DIR}" "${MODULE_CACHE_DIR}"
+
+case "${ARCHS}" in
+  arm64)
+    compile_arch "arm64" "${MACOS_DIR}/${APP_NAME}"
+    ;;
+  x86_64)
+    compile_arch "x86_64" "${MACOS_DIR}/${APP_NAME}"
+    ;;
+  universal)
+    compile_arch "arm64" "${TMP_DIR}/${APP_NAME}-arm64"
+    compile_arch "x86_64" "${TMP_DIR}/${APP_NAME}-x86_64"
+    lipo -create \
+      -output "${MACOS_DIR}/${APP_NAME}" \
+      "${TMP_DIR}/${APP_NAME}-arm64" \
+      "${TMP_DIR}/${APP_NAME}-x86_64"
+    ;;
+  *)
+    echo "Unsupported ARCHS value: ${ARCHS}. Use arm64, x86_64, or universal." >&2
+    exit 1
+    ;;
+esac
 
 cat > "${CONTENTS_DIR}/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -53,7 +95,7 @@ cat > "${CONTENTS_DIR}/Info.plist" <<PLIST
   <key>CFBundleVersion</key>
   <string>${VERSION}</string>
   <key>LSMinimumSystemVersion</key>
-  <string>13.0</string>
+  <string>${MIN_MACOS_VERSION}</string>
   <key>LSUIElement</key>
   <true/>
 </dict>
