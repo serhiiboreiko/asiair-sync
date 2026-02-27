@@ -24,5 +24,7 @@ struct ASIAIRSyncApp: App {
             MenuBarContentView(model: model)
         }
         .menuBarExtraStyle(.window)
+        .defaultSize(width: 380, height: 520)
+        .windowResizability(.contentSize)
     }
 }

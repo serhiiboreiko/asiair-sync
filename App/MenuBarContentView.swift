@@ -36,7 +36,8 @@ struct MenuBarContentView: View {
             .keyboardShortcut("q")
         }
         .padding(14)
-        .frame(width: 380)
+        .frame(width: 380, alignment: .topLeading)
+        .frame(maxHeight: .infinity, alignment: .top)
         .onAppear {
             if didAppear { return }
             didAppear = true
